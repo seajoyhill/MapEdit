@@ -1,7 +1,7 @@
-base_map_dir: "Maps/zhenhai03-edited-wall-remove-stairs"
-align_map_dir: "Maps/xj03"
-final_map_dir: "Maps/zhenhai03-fix-wall"
+base_map_dir: "Maps/zhenhai03-remove-2880-3108"
+align_map_dir: "Maps/xj05"
+final_map_dir: "Maps/zhenhai03-xj05"
 thre_z_min: -0.2
 thre_z_max: 2.0
-align_to_base_t: [0.5325, -44.08, 0.00]
-align_to_base_rpy_deg: [0.0, 0.0, 2]
+align_to_base_t: [0.5721, -0.133, 0.00]
+align_to_base_rpy_deg: [0.0, 0.0, -89.667]
