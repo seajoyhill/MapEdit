@@ -14,3 +14,6 @@ target_link_libraries(separate_frames ${PCL_LIBRARIES})
 
 add_executable(align_map align_map.cpp)
 target_link_libraries(align_map ${PCL_LIBRARIES} yaml-cpp)
+
+add_executable(align_routes align_routes.cpp)
+target_link_libraries(align_routes ${PCL_LIBRARIES} yaml-cpp)
