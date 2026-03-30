@@ -20,6 +20,8 @@ std::string final_map_name = "Maps/22F-final";
 Eigen::Vector3f align_to_base_t = Eigen::Vector3f::Zero();
 Eigen::Vector3f align_to_base_rpy_deg = Eigen::Vector3f::Zero();
 Eigen::Vector3f align_to_base_rpy_rad = Eigen::Vector3f::Zero();
+double ndt_transformation_epsilon = 0.001;
+int ndt_maximum_iterations = 50;
 bool base_match_roi_enable = false;
 bool base_match_use_ros_coord = false;
 double base_match_roi_x_min = 0.0;
@@ -38,6 +40,8 @@ void printParams() {
     std::cout << "align_to_base_rpy_deg: [" << align_to_base_rpy_deg.transpose() << "]" << std::endl;
     std::cout << "thre_z_min: " << thre_z_min << std::endl;
     std::cout << "thre_z_max: " << thre_z_max << std::endl;
+    std::cout << "ndt_transformation_epsilon: " << ndt_transformation_epsilon << std::endl;
+    std::cout << "ndt_maximum_iterations: " << ndt_maximum_iterations << std::endl;
     std::cout << "base_match_roi_enable: " << (base_match_roi_enable ? "true" : "false") << std::endl;
     if (base_match_roi_enable) {
         std::cout << "base_match_roi (ROS horizontal XY, same axes as align_to_base_t): [" << base_match_roi_x_min
@@ -73,6 +77,8 @@ int main(int argc, char **argv)
             std::cerr << "align_to_base_rpy_deg size is not 3!" << std::endl;
             return -1;
         }
+        ndt_transformation_epsilon = cfg["ndt_transformation_epsilon"].as<double>(0.001);
+        ndt_maximum_iterations = cfg["ndt_maximum_iterations"].as<int>(500);
         if (cfg["base_match_roi_enable"]) {
             base_match_roi_enable = cfg["base_match_roi_enable"].as<bool>();
         }
@@ -132,7 +138,7 @@ int main(int argc, char **argv)
     savePCDFile<PointType>(aligned_map_name + "/CornerMap_transformed.pcd", aligned_map_transformed);
 
     // =================== 3.NDT精细对齐 ===================
-PointCloudPtr base_map_for_ndt = base_map;
+    PointCloudPtr base_map_for_ndt = base_map;
     if (base_match_roi_enable) {
         PointCloudPtr base_cropped(new pcl::PointCloud<PointType>);
         Eigen::Vector4f min_lego, max_lego;
@@ -164,8 +170,8 @@ PointCloudPtr base_map_for_ndt = base_map;
 
     PointCloudPtr final_cloud(new pcl::PointCloud<PointType>);
     pcl::NormalDistributionsTransform<PointType, PointType> ndt;
-    ndt.setTransformationEpsilon(0.001);
-    ndt.setMaximumIterations(50);
+    ndt.setTransformationEpsilon(ndt_transformation_epsilon);
+    ndt.setMaximumIterations(ndt_maximum_iterations);
     ndt.setInputSource(aligned_map_transformed);
     ndt.setInputTarget(base_map_for_ndt);
     ndt.align(*final_cloud);
