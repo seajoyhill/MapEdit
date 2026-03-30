@@ -8,6 +8,8 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <fstream>
+#include <iomanip>
 #include <Eigen/Dense>
 #include <yaml-cpp/yaml.h>
 
@@ -47,7 +49,6 @@ void printParams() {
         std::cout << "base_match_roi (ROS horizontal XY, same axes as align_to_base_t): [" << base_match_roi_x_min
                   << ", " << base_match_roi_y_min << ", " << base_match_roi_x_max << ", " << base_match_roi_y_max
                   << "]" << std::endl;
-        std::cout << "  (NDT crop Z in ROS uses thre_z_min / thre_z_max)" << std::endl;
     }
     std::cout << "==================== " << "MapEdit's params" <<  " ===================="<< std::endl;
 }
@@ -185,6 +186,21 @@ int main(int argc, char **argv)
     // 将初步对齐的变换和NDT的变换结合，得到最终的变换
     Eigen::Matrix3f R_final = R_ndt * align_to_base_R_lego;
     Eigen::Vector3f t_final = R_ndt * align_to_base_t_lego + t_ndt;
+
+    // Save final transform (matrix form): 4x4 homogeneous matrix [R t; 0 0 0 1]
+    Eigen::Matrix4f T_final = Eigen::Matrix4f::Identity();
+    T_final.block<3, 3>(0, 0) = R_final;
+    T_final.block<3, 1>(0, 3) = t_final;
+    {
+        const std::string out_file = final_map_name + "/R_t_final.txt";
+        std::ofstream ofs(out_file);
+        if (!ofs.is_open()) {
+            std::cerr << "Failed to open output file: " << out_file << std::endl;
+        } else {
+            ofs << std::setprecision(12);
+            ofs << T_final << "\n";
+        }
+    }
 
     // =================== 4.合并pose.txt和trajectory.pcd ===================
     std::map<int, Pose> base_poses;
