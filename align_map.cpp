@@ -1,6 +1,7 @@
 #include "utility.hpp"
 #include "Pose.hpp"
 #include "MapInfo.h"
+#include <pcl/filters/crop_box.h>
 #include <pcl/registration/icp.h>
 #include <pcl/registration/ndt.h>
 #include <map>
@@ -19,6 +20,15 @@ std::string final_map_name = "Maps/22F-final";
 Eigen::Vector3f align_to_base_t = Eigen::Vector3f::Zero();
 Eigen::Vector3f align_to_base_rpy_deg = Eigen::Vector3f::Zero();
 Eigen::Vector3f align_to_base_rpy_rad = Eigen::Vector3f::Zero();
+bool base_match_roi_enable = false;
+bool base_match_use_ros_coord = false;
+double base_match_roi_x_min = 0.0;
+double base_match_roi_y_min = 0.0;
+double base_match_roi_z_min = 0.0;
+double base_match_roi_x_max = 0.0;
+double base_match_roi_y_max = 0.0;
+double base_match_roi_z_max = 0.0;
+
 void printParams() {
     std::cout << "==================== " << "MapEdit's params" <<  " ===================="<< std::endl;
     std::cout << "base_map_name: " << base_map_name << std::endl;
@@ -28,6 +38,13 @@ void printParams() {
     std::cout << "align_to_base_rpy_deg: [" << align_to_base_rpy_deg.transpose() << "]" << std::endl;
     std::cout << "thre_z_min: " << thre_z_min << std::endl;
     std::cout << "thre_z_max: " << thre_z_max << std::endl;
+    std::cout << "base_match_roi_enable: " << (base_match_roi_enable ? "true" : "false") << std::endl;
+    if (base_match_roi_enable) {
+        std::cout << "base_match_roi (ROS horizontal XY, same axes as align_to_base_t): [" << base_match_roi_x_min
+                  << ", " << base_match_roi_y_min << ", " << base_match_roi_x_max << ", " << base_match_roi_y_max
+                  << "]" << std::endl;
+        std::cout << "  (NDT crop Z in ROS uses thre_z_min / thre_z_max)" << std::endl;
+    }
     std::cout << "==================== " << "MapEdit's params" <<  " ===================="<< std::endl;
 }
 
@@ -55,6 +72,28 @@ int main(int argc, char **argv)
         } else {
             std::cerr << "align_to_base_rpy_deg size is not 3!" << std::endl;
             return -1;
+        }
+        if (cfg["base_match_roi_enable"]) {
+            base_match_roi_enable = cfg["base_match_roi_enable"].as<bool>();
+        }
+        if (base_match_roi_enable) {
+            std::vector<double> roi = cfg["base_match_roi"].as<std::vector<double>>();
+            if (roi.size() != 6) {
+                std::cerr << "base_match_roi must have 6 values: [x_min, y_min, z_min, x_max, y_max, z_max] in ROS frame"
+                          << std::endl;
+                return -1;
+            }
+            base_match_roi_x_min = roi[0];
+            base_match_roi_y_min = roi[1];
+            base_match_roi_z_min = roi[2];
+            base_match_roi_x_max = roi[3];
+            base_match_roi_y_max = roi[4];
+            base_match_roi_z_max = roi[5];
+            if (!(base_match_roi_x_min < base_match_roi_x_max && base_match_roi_y_min < base_match_roi_y_max && base_match_roi_z_min < base_match_roi_z_max)) {
+                std::cerr << "base_match_roi: require x_min < x_max and y_min < y_max and z_min < z_max" << std::endl;
+                return -1;
+            }
+            base_match_use_ros_coord = cfg["base_match_use_ros_coord"].as<bool>(false);
         }
     } catch (const std::exception& e) {
         std::cerr << "Error loading " << config_file << e.what() << std::endl;
@@ -93,14 +132,45 @@ int main(int argc, char **argv)
     savePCDFile<PointType>(aligned_map_name + "/CornerMap_transformed.pcd", aligned_map_transformed);
 
     // =================== 3.NDT精细对齐 ===================
+PointCloudPtr base_map_for_ndt = base_map;
+    if (base_match_roi_enable) {
+        PointCloudPtr base_cropped(new pcl::PointCloud<PointType>);
+        Eigen::Vector4f min_lego, max_lego;
+        if (base_match_use_ros_coord) {
+            min_lego << base_match_roi_y_min, base_match_roi_z_min, base_match_roi_x_min, 1.0f;
+            max_lego << base_match_roi_y_max, base_match_roi_z_max, base_match_roi_x_max, 1.0f;
+        } else {
+            min_lego << base_match_roi_x_min, base_match_roi_y_min, base_match_roi_z_min, 1.0f;
+            max_lego << base_match_roi_x_max, base_match_roi_y_max, base_match_roi_z_max, 1.0f;
+        }
+        pcl::CropBox<PointType> crop;
+        crop.setInputCloud(base_map);
+        crop.setMin(min_lego);
+        crop.setMax(max_lego);
+        crop.setNegative(false);
+        crop.filter(*base_cropped);
+        std::cout << "NDT base map: cropped to ROS ROI (LeGO crop box min/max): min [" << min_lego.head<3>().transpose()
+                  << "] max [" << max_lego.head<3>().transpose() << "]" << std::endl;
+        std::cout << "NDT base map: " << base_cropped->points.size() << " points (full base: "
+                  << base_map->points.size() << ")" << std::endl;
+        if (base_cropped->points.empty()) {
+            std::cerr << "base_match_roi produced empty point cloud; check ROI (ROS) and thre_z_min/thre_z_max"
+                      << std::endl;
+            return -1;
+        }
+        savePCDFile<PointType>(final_map_name + "/NdtMatchRoi_base_lego.pcd", base_cropped);
+        base_map_for_ndt = base_cropped;
+    }
+
     PointCloudPtr final_cloud(new pcl::PointCloud<PointType>);
     pcl::NormalDistributionsTransform<PointType, PointType> ndt;
     ndt.setTransformationEpsilon(0.001);
     ndt.setMaximumIterations(50);
     ndt.setInputSource(aligned_map_transformed);
-    ndt.setInputTarget(base_map);
+    ndt.setInputTarget(base_map_for_ndt);
     ndt.align(*final_cloud);
     auto finalTransformation = ndt.getFinalTransformation(); // NOTICE: 这是我们最终需要的变换矩阵
+    std::cout << "==================== " << "NDT alignment result" <<  " ===================="<< std::endl;
     std::cout << "NDT alignment completed in " << ndt.getFinalNumIteration() << " iterations." << std::endl;
     std::cout << "Final transformation epsilon: " << ndt.getTransformationEpsilon() << std::endl;
     std::cout << "Final finalTransformation matrix:\n" << finalTransformation << std::endl;
@@ -166,8 +236,6 @@ int main(int argc, char **argv)
 
     // =================== 5.根据得到的变换合并地图 ===================
     // 加载CornerMap.pcd、SurfMap.pcd，应用R_final和t_final变换后与base_map的地图点云合并，最后合并成GlobalMap.pcd
-    // trajectory.pcd中的点也需要应用同样的变换，并且修改点的intensity值以避免与base_map的轨迹点冲突
-    // pose.txt中的位姿也需要相应修改
     PointCloudPtr base_corner_map(new pcl::PointCloud<PointType>);
     loadPCDFile<PointType>(base_map_name + "/CornerMap.pcd", base_corner_map);
     PointCloudPtr aligned_corner_map(new pcl::PointCloud<PointType>);

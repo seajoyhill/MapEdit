@@ -3,5 +3,10 @@ align_map_dir: "Maps/xj05"
 final_map_dir: "Maps/zhenhai03-xj05"
 thre_z_min: -0.2
 thre_z_max: 2.0
-align_to_base_t: [0.5721, -0.133, 0.00]
-align_to_base_rpy_deg: [0.0, 0.0, -89.667]
+# 坐标系都是ROS坐标系，程序内部会转换为LeGO坐标系
+# 对应关系：ROS (x,y,z) <-> LeGO (y,z,x)
+align_to_base_t: [-162.6, -299.8, 35.00]
+align_to_base_rpy_deg: [0.0, -10.0, -90.0]
+base_match_roi_enable: true
+base_match_use_ros_coord: true
+base_match_roi: [-185.0, -433.0, -0.2, -95.0, -299.0, 80.0]
