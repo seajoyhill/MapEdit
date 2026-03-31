@@ -1,5 +1,9 @@
 #pragma once
 #include <string>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+#include <Eigen/Dense>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 using PointType = pcl::PointXYZI;
@@ -92,4 +96,41 @@ void applyTransform(typename pcl::PointCloud<T>::Ptr& cloud, const Eigen::Matrix
         point.y = pt_transformed.y();
         point.z = pt_transformed.z();
     }
+}
+
+/// Load a 4x4 transform matrix from a text file (4 rows × 4 numbers; skips empty lines and `#` comments).
+/// Use e.g. `loadTransformFromTxt<float>(path)` or `loadTransformFromTxt<double>(path)`.
+template <typename Scalar>
+Eigen::Matrix<Scalar, 4, 4> loadTransformFromTxt(const std::string& path)
+{
+    std::ifstream ifs(path);
+    if (!ifs) {
+        throw std::runtime_error("loadTransformFromTxt: open failed: " + path);
+    }
+    Eigen::Matrix<Scalar, 4, 4> T;
+    std::string line;
+    int row = 0;
+    while (std::getline(ifs, line) && row < 4) {
+        if (line.empty()) {
+            continue;
+        }
+        const auto p = line.find_first_not_of(" \t\r\n");
+        if (p == std::string::npos) {
+            continue;
+        }
+        if (line[p] == '#') {
+            continue;
+        }
+        std::istringstream iss(line);
+        for (int col = 0; col < 4; ++col) {
+            if (!(iss >> T(row, col))) {
+                throw std::runtime_error("loadTransformFromTxt: parse error at row " + std::to_string(row));
+            }
+        }
+        ++row;
+    }
+    if (row != 4) {
+        throw std::runtime_error("loadTransformFromTxt: expected 4 data rows, got " + std::to_string(row));
+    }
+    return T;
 }
