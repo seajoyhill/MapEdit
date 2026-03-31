@@ -155,4 +155,62 @@ int main() {
         return -1;
     }
 
+    /// Write base_routes_root to final_map_name/routes.yaml
+    {
+        const std::string dump_path = final_map_name + "/routes.yaml";
+        std::ofstream out(dump_path);
+        if (!out) {
+            std::cerr << "Error opening for write: " << dump_path << std::endl;
+            return -1;
+        }
+        out << base_routes_root;
+        std::cout << "Wrote " << dump_path << std::endl;
+    }
+
+    /// Append aligned arm_points.yaml entries after base (duplicate top-level key is an error).
+    const std::string base_arm_points_file = base_map_name + "/arm_points.yaml";
+    const std::string aligned_arm_points_file = aligned_map_name + "/arm_points.yaml";
+    YAML::Node base_arm_points_root;
+    try {
+        base_arm_points_root = YAML::LoadFile(base_arm_points_file);
+    } catch (const YAML::Exception& e) {
+        std::cerr << "Error loading " << base_arm_points_file << ": " << e.what() << std::endl;
+        return -1;
+    }
+    YAML::Node aligned_arm_points_root;
+    try {
+        aligned_arm_points_root = YAML::LoadFile(aligned_arm_points_file);
+    } catch (const YAML::Exception& e) {
+        std::cerr << "Error loading " << aligned_arm_points_file << ": " << e.what() << std::endl;
+        return -1;
+    }
+    if (!base_arm_points_root.IsMap() || !aligned_arm_points_root.IsMap()) {
+        std::cerr << "arm_points.yaml root must be a mapping\n";
+        return -1;
+    }
+    std::unordered_set<std::string> arm_point_keys;
+    for (const auto& kv : base_arm_points_root) {
+        arm_point_keys.insert(kv.first.as<std::string>());
+    }
+    for (const auto& kv : aligned_arm_points_root) {
+        const std::string key = kv.first.as<std::string>();
+        if (key == "start_point") continue;
+        if (arm_point_keys.count(key) != 0) {
+            std::cerr << "arm_points: duplicate top-level key \"" << key << "\" (already in base)\n";
+            return -1;
+        }
+        base_arm_points_root[key] = YAML::Clone(kv.second);
+        arm_point_keys.insert(key);
+    }
+    {
+        const std::string arm_out = final_map_name + "/arm_points.yaml";
+        std::ofstream out(arm_out);
+        if (!out) {
+            std::cerr << "Error opening for write: " << arm_out << std::endl;
+            return -1;
+        }
+        out << base_arm_points_root;
+        std::cout << "Wrote " << arm_out << std::endl;
+    }
+    return 0;
 }
