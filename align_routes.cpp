@@ -32,62 +32,105 @@ std::unordered_set<int> collect_point_ids(const YAML::Node& points) {
     return ids;
 }
 
-} // namespace
+bool load_yaml_file(const std::string& path, YAML::Node& out) {
+    try {
+        out = YAML::LoadFile(path);
+        return true;
+    } catch (const YAML::Exception& e) {
+        std::cerr << "Error loading " << path << ": " << e.what() << std::endl;
+        return false;
+    }
+}
 
-const std::string base_map_name = "Maps/zhenhai-xun-2-3";
-const std::string aligned_map_name = "Maps/zhenhai-road-6";
-const std::string final_map_name = "Maps/zhenhai-xun-2-road-3";
+bool write_yaml_file(const std::string& path, const YAML::Node& node) {
+    std::ofstream out(path);
+    if (!out) {
+        std::cerr << "Error opening for write: " << path << std::endl;
+        return false;
+    }
+    out << node;
+    std::cout << "Wrote " << path << std::endl;
+    return true;
+}
 
-// routes.yaml中的pose没有保存z坐标，需要从trajectory.pcd找到最近关键帧的z坐标
-int main() {
-    const std::string aligned_routes_file = aligned_map_name + "/routes.yaml";
-    const std::string base_routes_file = base_map_name + "/routes.yaml";
+/// routes.yaml中的pose没有保存z坐标，需要从trajectory.pcd找到最近关键帧的z坐标，
+/// 然后变换到base坐标系，返回构造好的YAML条目。
+YAML::Node transform_route_point(const YAML::Node& p,
+                                 const pcl::KdTreeFLANN<PointType>& kdtree,
+                                 const PointCloudPtr& trajectory,
+                                 const Eigen::Matrix3f& R_ba,
+                                 const Eigen::Vector3f& t_ba) {
+    auto pose = p["pose"].as<std::vector<double>>();
+    PointType pose_fixed;
+    pose_fixed.z = pose[0];
+    pose_fixed.x = pose[1];
+    pose_fixed.y = 0.0;
+
+    std::vector<int> point_indices;
+    std::vector<float> point_distances;
+    int found = kdtree.nearestKSearch(pose_fixed, 1, point_indices, point_distances);
+    if (found > 0) {
+        const auto index = point_indices[0];
+        const auto& hit = trajectory->points[index];
+        std::cout << "(" << pose_fixed.z << ", " << pose_fixed.x << ")"
+                  << " dist=" << std::sqrt(point_distances[0]) << " hit=(" << hit.x << " " << hit.y << " " << hit.z
+                  << ")" << std::endl;
+        pose_fixed.y = hit.y;
+    } else {
+        std::cerr << "No points!" << std::endl;
+    }
+
+    Eigen::Vector3f pose_fixed_vec(pose_fixed.x, pose_fixed.y, pose_fixed.z);
+    Eigen::Vector3f pose_transformed = R_ba * pose_fixed_vec + t_ba;
+    pose_fixed.x = pose_transformed.x();
+    pose_fixed.y = pose_transformed.y();
+    pose_fixed.z = pose_transformed.z();
+    std::cout << "Transformed pose: (" << pose_fixed.x << ", " << pose_fixed.y << ", " << pose_fixed.z << ")"
+              << std::endl;
+
+    YAML::Node entry;
+    entry["id"] = p["id"];
+    entry["type"] = p["type"];
+    entry["delay_time"] = p["delay_time"];
+    YAML::Node pose_seq(YAML::NodeType::Sequence);
+    pose_seq.SetStyle(YAML::EmitterStyle::Flow);
+    constexpr int kPoseDecimals = 4;
+    pose_seq.push_back(round_decimal(static_cast<double>(pose_fixed.z), kPoseDecimals));
+    pose_seq.push_back(round_decimal(static_cast<double>(pose_fixed.x), kPoseDecimals));
+    pose_seq.push_back(round_decimal(pose[2], kPoseDecimals)); // yaw 也应变换，此处未做
+    entry["pose"] = pose_seq;
+    entry["zone"] = p["zone"];
+    entry["no_rotation"] = p["no_rotation"];
+    entry["obstacle_detection"] = p["obstacle_detection"];
+    entry["description"] = p["description"];
+    return entry;
+}
+
+/// 把aligned_map的routes变换并合并到base_map，输出到final_map。
+int merge_routes(const std::string& base_map_name,
+                 const std::string& aligned_map_name,
+                 const std::string& final_map_name) {
     PointCloudPtr aligned_trajectory(new pcl::PointCloud<PointType>);
     loadPCDFile<PointType>(aligned_map_name + "/trajectory.pcd", aligned_trajectory);
-    // 将LeGO的3d地图y轴（也就是ROS下的z轴）设置为0转换为2d地图
-    // PointCloudPtr aligned_map_2d(new pcl::PointCloud<PointType>);
-    // aligned_map_2d->resize(aligned_map->points.size());
-    // for (size_t i = 0; i < aligned_map->points.size(); ++i) {
-    //    const auto& psrc = aligned_map->points[i];
-    //    auto& pdst = aligned_map_2d->points[i];
-    //    pdst.x = psrc.x;
-    //    pdst.y = 0; // LeGO格式地图y轴是ROS下的z轴
-    //    pdst.z = psrc.z;
-    // }
-    // savePCDFile<PointType>(aligned_map_name + "/2d.pcd", aligned_map_2d);
 
     // T to base from aligned
     auto T_ba = loadTransformFromTxt<float>(final_map_name + "/R_t_final.txt");
-    auto R_ba = T_ba.block<3, 3>(0, 0);
-    auto t_ba = T_ba.block<3, 1>(0, 3);
+    Eigen::Matrix3f R_ba = T_ba.block<3, 3>(0, 0);
+    Eigen::Vector3f t_ba = T_ba.block<3, 1>(0, 3);
+
     pcl::KdTreeFLANN<PointType> aligned_trajectory_kdtree(new pcl::KdTreeFLANN<PointType>);
     aligned_trajectory_kdtree.setInputCloud(aligned_trajectory);
-    std::vector<int> point_indices;
-    std::vector<float> point_distances;
+
     YAML::Node base_routes_root;
-    try {
-        base_routes_root = YAML::LoadFile(base_routes_file);
-    } catch (const YAML::Exception& e) {
-        std::cerr << "Error loading " << base_routes_file << ": " << e.what() << std::endl;
+    if (!load_yaml_file(base_map_name + "/routes.yaml", base_routes_root)) {
         return -1;
     }
     YAML::Node base_routes_points = base_routes_root["Points"];
     YAML::Node base_routes_edges = base_routes_root["Edges"];
     std::unordered_set<int> base_point_ids = collect_point_ids(base_routes_points);
-    // {
-    //     const std::string dump_path = "routes_dump.yaml";
-    //     std::ofstream out(dump_path);
-    //     if (!out) {
-    //         std::cerr << "Error opening for write: " << dump_path << std::endl;
-    //         return -1;
-    //     }
-    //     out << base_routes_root;
-    //     std::cout << "Wrote " << dump_path << std::endl;
-    //     return 0;
-    // }
 
     try {
-        YAML::Node aligned_routes_root = YAML::LoadFile(aligned_routes_file);
+        YAML::Node aligned_routes_root = YAML::LoadFile(aligned_map_name + "/routes.yaml");
         YAML::Node aligned_routes_points = aligned_routes_root["Points"];
         YAML::Node aligned_routes_edges = aligned_routes_root["Edges"];
         // 把aligned_map的points坐标系变换到base_map的坐标系
@@ -101,49 +144,8 @@ int main() {
                 std::cerr << "routes: duplicate point id " << point_id << " (already in base or repeated in aligned)\n";
                 return -1;
             }
-            auto pose = p["pose"].as<std::vector<double>>();
-            PointType pose_fixed;
-            pose_fixed.z = pose[0];
-            pose_fixed.x = pose[1];
-            pose_fixed.y = 0.0;
-            point_indices.clear();
-            point_distances.clear();
-            int found = aligned_trajectory_kdtree.nearestKSearch(pose_fixed, 1, point_indices, point_distances);
-            if (found > 0) {
-                // point_distances is squared distance (PCL behavior), so take
-                // sqrt for real distance.
-                const auto index = point_indices[0];
-                const auto& hit = aligned_trajectory->points[index];
-                std::cout << "(" << pose_fixed.z << ", " << pose_fixed.x << ")"
-                          << " dist=" << std::sqrt(point_distances[0]) << " hit=(" << hit.x << " " << hit.y << " "
-                          << hit.z << ")" << std::endl;
-                pose_fixed.y = hit.y;
-            } else {
-                std::cerr << "No points!" << std::endl;
-            }
-            Eigen::Vector3f pose_fixed_vec(pose_fixed.x, pose_fixed.y, pose_fixed.z);
-            Eigen::Vector3f pose_transformed = R_ba * pose_fixed_vec + t_ba;
-            pose_fixed.x = pose_transformed.x();
-            pose_fixed.y = pose_transformed.y();
-            pose_fixed.z = pose_transformed.z();
-            std::cout << "Transformed pose: (" << pose_fixed.x << ", " << pose_fixed.y << ", " << pose_fixed.z << ")"
-                      << std::endl;
-            YAML::Node entry;
-            entry["id"] = p["id"];
-            entry["type"] = p["type"];
-            entry["delay_time"] = p["delay_time"];
-            YAML::Node pose_seq(YAML::NodeType::Sequence);
-            pose_seq.SetStyle(YAML::EmitterStyle::Flow);
-            constexpr int kPoseDecimals = 4;
-            pose_seq.push_back(round_decimal(static_cast<double>(pose_fixed.z), kPoseDecimals));
-            pose_seq.push_back(round_decimal(static_cast<double>(pose_fixed.x), kPoseDecimals));
-            pose_seq.push_back(round_decimal(pose[2], kPoseDecimals)); // yaw 也应变换，此处未做
-            entry["pose"] = pose_seq;
-            entry["zone"] = p["zone"];
-            entry["no_rotation"] = p["no_rotation"];
-            entry["obstacle_detection"] = p["obstacle_detection"];
-            entry["description"] = p["description"];
-            base_routes_points.push_back(entry);
+            base_routes_points.push_back(
+                transform_route_point(p, aligned_trajectory_kdtree, aligned_trajectory, R_ba, t_ba));
             base_point_ids.insert(point_id);
         }
         // Edges不涉及具体坐标，直接拷贝到base_routes_edges
@@ -155,39 +157,30 @@ int main() {
         return -1;
     }
 
-    /// Write base_routes_root to final_map_name/routes.yaml
-    {
-        const std::string dump_path = final_map_name + "/routes.yaml";
-        std::ofstream out(dump_path);
-        if (!out) {
-            std::cerr << "Error opening for write: " << dump_path << std::endl;
-            return -1;
-        }
-        out << base_routes_root;
-        std::cout << "Wrote " << dump_path << std::endl;
+    if (!write_yaml_file(final_map_name + "/routes.yaml", base_routes_root)) {
+        return -1;
     }
+    return 0;
+}
 
-    /// Append aligned arm_points.yaml entries after base (duplicate top-level key is an error).
-    const std::string base_arm_points_file = base_map_name + "/arm_points.yaml";
-    const std::string aligned_arm_points_file = aligned_map_name + "/arm_points.yaml";
+/// 把aligned_map的arm_points合并到base_map（跳过start_point，检查重复key），输出到final_map。
+int merge_arm_points(const std::string& base_map_name,
+                     const std::string& aligned_map_name,
+                     const std::string& final_map_name) {
     YAML::Node base_arm_points_root;
-    try {
-        base_arm_points_root = YAML::LoadFile(base_arm_points_file);
-    } catch (const YAML::Exception& e) {
-        std::cerr << "Error loading " << base_arm_points_file << ": " << e.what() << std::endl;
+    if (!load_yaml_file(base_map_name + "/arm_points.yaml", base_arm_points_root)) {
         return -1;
     }
     YAML::Node aligned_arm_points_root;
-    try {
-        aligned_arm_points_root = YAML::LoadFile(aligned_arm_points_file);
-    } catch (const YAML::Exception& e) {
-        std::cerr << "Error loading " << aligned_arm_points_file << ": " << e.what() << std::endl;
+    if (!load_yaml_file(aligned_map_name + "/arm_points.yaml", aligned_arm_points_root)) {
         return -1;
     }
+
     if (!base_arm_points_root.IsMap() || !aligned_arm_points_root.IsMap()) {
         std::cerr << "arm_points.yaml root must be a mapping\n";
         return -1;
     }
+
     std::unordered_set<std::string> arm_point_keys;
     for (const auto& kv : base_arm_points_root) {
         arm_point_keys.insert(kv.first.as<std::string>());
@@ -202,15 +195,25 @@ int main() {
         base_arm_points_root[key] = YAML::Clone(kv.second);
         arm_point_keys.insert(key);
     }
-    {
-        const std::string arm_out = final_map_name + "/arm_points.yaml";
-        std::ofstream out(arm_out);
-        if (!out) {
-            std::cerr << "Error opening for write: " << arm_out << std::endl;
-            return -1;
-        }
-        out << base_arm_points_root;
-        std::cout << "Wrote " << arm_out << std::endl;
+
+    if (!write_yaml_file(final_map_name + "/arm_points.yaml", base_arm_points_root)) {
+        return -1;
+    }
+    return 0;
+}
+
+} // namespace
+
+const std::string base_map_name = "Maps/zhenhai-xun-2-3";
+const std::string aligned_map_name = "Maps/zhenhai-road-6";
+const std::string final_map_name = "Maps/zhenhai-xun-2-road-3";
+
+int main() {
+    if (merge_routes(base_map_name, aligned_map_name, final_map_name) != 0) {
+        return -1;
+    }
+    if (merge_arm_points(base_map_name, aligned_map_name, final_map_name) != 0) {
+        return -1;
     }
     return 0;
 }
