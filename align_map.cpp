@@ -13,7 +13,7 @@
 #include <Eigen/Dense>
 #include <yaml-cpp/yaml.h>
 
-const char* config_file = "align.yaml";
+const char* config_file = "align_map.yaml";
 double thre_z_min = -0.2;
 double thre_z_max = 2.0;
 std::string base_map_name = "Maps/22F";

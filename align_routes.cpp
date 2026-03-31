@@ -203,12 +203,20 @@ int merge_arm_points(const std::string& base_map_name,
 }
 
 } // namespace
-
-const std::string base_map_name = "Maps/zhenhai-xun-2-3";
-const std::string aligned_map_name = "Maps/zhenhai-road-6";
-const std::string final_map_name = "Maps/zhenhai-xun-2-road-3";
-
+const char* config_file = "align_routes.yaml";
+std::string base_map_name = "Maps/zhenhai-xun-2-3";
+std::string aligned_map_name = "Maps/zhenhai-road-6";
+std::string final_map_name = "Maps/zhenhai-xun-2-road-3";
 int main() {
+    try {
+        YAML::Node cfg = YAML::LoadFile(config_file);
+        base_map_name = cfg["base_map_dir"].as<std::string>("Maps/zhenhai-xun-2-3");
+        aligned_map_name = cfg["align_map_dir"].as<std::string>("Maps/zhenhai-road-6");
+        final_map_name = cfg["final_map_dir"].as<std::string>("Maps/zhenhai-xun-2-road-3");
+    } catch (const std::exception& e) {
+        std::cerr << "Error loading " << config_file << e.what() << std::endl;
+        return -1;
+    }
     if (merge_routes(base_map_name, aligned_map_name, final_map_name) != 0) {
         return -1;
     }
