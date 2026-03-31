@@ -42,8 +42,8 @@ const std::string final_map_name = "Maps/zhenhai-xun-2-road-3";
 int main() {
     const std::string aligned_routes_file = aligned_map_name + "/routes.yaml";
     const std::string base_routes_file = base_map_name + "/routes.yaml";
-    PointCloudPtr aligned_map(new pcl::PointCloud<PointType>);
-    loadPCDFile<PointType>(aligned_map_name + "/trajectory.pcd", aligned_map);
+    PointCloudPtr aligned_trajectory(new pcl::PointCloud<PointType>);
+    loadPCDFile<PointType>(aligned_map_name + "/trajectory.pcd", aligned_trajectory);
     // 将LeGO的3d地图y轴（也就是ROS下的z轴）设置为0转换为2d地图
     // PointCloudPtr aligned_map_2d(new pcl::PointCloud<PointType>);
     // aligned_map_2d->resize(aligned_map->points.size());
@@ -60,8 +60,8 @@ int main() {
     auto T_ba = loadTransformFromTxt<float>(final_map_name + "/R_t_final.txt");
     auto R_ba = T_ba.block<3, 3>(0, 0);
     auto t_ba = T_ba.block<3, 1>(0, 3);
-    pcl::KdTreeFLANN<PointType> aligned_map_kdtree(new pcl::KdTreeFLANN<PointType>);
-    aligned_map_kdtree.setInputCloud(aligned_map);
+    pcl::KdTreeFLANN<PointType> aligned_trajectory_kdtree(new pcl::KdTreeFLANN<PointType>);
+    aligned_trajectory_kdtree.setInputCloud(aligned_trajectory);
     std::vector<int> point_indices;
     std::vector<float> point_distances;
     YAML::Node base_routes_root;
@@ -108,12 +108,12 @@ int main() {
             pose_fixed.y = 0.0;
             point_indices.clear();
             point_distances.clear();
-            int found = aligned_map_kdtree.nearestKSearch(pose_fixed, 1, point_indices, point_distances);
+            int found = aligned_trajectory_kdtree.nearestKSearch(pose_fixed, 1, point_indices, point_distances);
             if (found > 0) {
                 // point_distances is squared distance (PCL behavior), so take
                 // sqrt for real distance.
                 const auto index = point_indices[0];
-                const auto& hit = aligned_map->points[index];
+                const auto& hit = aligned_trajectory->points[index];
                 std::cout << "(" << pose_fixed.z << ", " << pose_fixed.x << ")"
                           << " dist=" << std::sqrt(point_distances[0]) << " hit=(" << hit.x << " " << hit.y << " "
                           << hit.z << ")" << std::endl;
