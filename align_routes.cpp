@@ -97,7 +97,21 @@ YAML::Node transform_route_point(const YAML::Node& p,
                               Eigen::AngleAxisf(point_rpy[1], Eigen::Vector3f::UnitY()) *
                               Eigen::AngleAxisf(point_rpy[0], Eigen::Vector3f::UnitX()))
                                  .toRotationMatrix();
-    Eigen::Vector3f point_rpy_transformed = R_pose * point_rpy;
+    auto point_R_transformed = R_ba * R_pose;
+    std::cout << point_rpy.transpose() << std::endl;
+    auto point_rpy_transformed = point_R_transformed.eulerAngles(2, 1, 0);
+    std::cout << "调整前: " << point_rpy_transformed.transpose() << std::endl;
+    if (std::abs(std::abs(point_rpy_transformed[0]) - M_PI) < 0.2 || std::abs(std::abs(point_rpy_transformed[2]) - M_PI) < 0.2) {
+        point_rpy_transformed[0] = point_rpy_transformed[0] + M_PI;
+        point_rpy_transformed[1] = M_PI - point_rpy_transformed[1];
+        point_rpy_transformed[2] = point_rpy_transformed[2] + M_PI;
+        for (int i = 0; i < 3; i++) {
+            if (std::abs(point_rpy_transformed[i]) > M_PI) {
+                point_rpy_transformed[i] = point_rpy_transformed[i] - 2 * M_PI;
+            }
+        }
+    }
+    std::cout << "调整后: " << point_rpy_transformed.transpose() << std::endl;
     YAML::Node entry;
     entry["id"] = p["id"];
     entry["type"] = p["type"];
@@ -107,7 +121,7 @@ YAML::Node transform_route_point(const YAML::Node& p,
     constexpr int kPoseDecimals = 4;
     pose_seq.push_back(round_decimal(static_cast<double>(point_fixed.z), kPoseDecimals));
     pose_seq.push_back(round_decimal(static_cast<double>(point_fixed.x), kPoseDecimals));
-    pose_seq.push_back(round_decimal(point_rpy_transformed[1], kPoseDecimals));  // yaw 也应变换，此处未做
+    pose_seq.push_back(round_decimal(point_rpy_transformed[1], kPoseDecimals));
     entry["pose"] = pose_seq;
     entry["zone"] = p["zone"];
     entry["no_rotation"] = p["no_rotation"];
