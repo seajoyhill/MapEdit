@@ -7,6 +7,7 @@ ndt_transformation_epsilon: 0.001
 ndt_maximum_iterations: 100
 # 坐标系都是ROS坐标系，程序内部会转换为LeGO坐标系
 # 对应关系：ROS (x,y,z) <-> LeGO (y,z,x)
+# zhenhai-road-6在henhai-xun-2-3上的4012号点位开始建图
 align_to_base_t: [-162.6, -299.8, 35.00]
 align_to_base_rpy_deg: [0.0, -10.0, -90.0]
 base_match_roi_enable: true

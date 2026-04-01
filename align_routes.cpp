@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 #include "utility.hpp"
+#include "Pose.hpp"
 
 namespace {
 
@@ -58,36 +59,45 @@ bool write_yaml_file(const std::string& path, const YAML::Node& node) {
 YAML::Node transform_route_point(const YAML::Node& p,
                                  const pcl::KdTreeFLANN<PointType>& kdtree,
                                  const PointCloudPtr& trajectory,
+                                 const std::map<int, Pose>& poses,
                                  const Eigen::Matrix3f& R_ba,
                                  const Eigen::Vector3f& t_ba) {
-    auto pose = p["pose"].as<std::vector<double>>();
-    PointType pose_fixed;
-    pose_fixed.z = pose[0];
-    pose_fixed.x = pose[1];
-    pose_fixed.y = 0.0;
-
+    auto tpose = p["pose"].as<std::vector<double>>();
+    PointType point_fixed;
+    point_fixed.z = tpose[0];
+    point_fixed.x = tpose[1];
+    point_fixed.y = 0.0;
+    Eigen::Vector3f point_rpy(0.0, tpose[2], 0.0);
     std::vector<int> point_indices;
     std::vector<float> point_distances;
-    int found = kdtree.nearestKSearch(pose_fixed, 1, point_indices, point_distances);
+    int found = kdtree.nearestKSearch(point_fixed, 1, point_indices, point_distances);
     if (found > 0) {
         const auto index = point_indices[0];
         const auto& hit = trajectory->points[index];
-        std::cout << "(" << pose_fixed.z << ", " << pose_fixed.x << ")"
+        std::cout << "(" << point_fixed.z << ", " << point_fixed.x << ")"
                   << " dist=" << std::sqrt(point_distances[0]) << " hit=(" << hit.x << " " << hit.y << " " << hit.z
                   << ")" << std::endl;
-        pose_fixed.y = hit.y;
+        point_fixed.y = hit.y;
+        int pose_id = static_cast<int>(hit.intensity);
+        auto nearest_pose = poses.at(pose_id);
+        point_rpy[0] = nearest_pose.rpy[0];
+        point_rpy[2] = nearest_pose.rpy[2];
     } else {
         std::cerr << "No points!" << std::endl;
     }
 
-    Eigen::Vector3f pose_fixed_vec(pose_fixed.x, pose_fixed.y, pose_fixed.z);
-    Eigen::Vector3f pose_transformed = R_ba * pose_fixed_vec + t_ba;
-    pose_fixed.x = pose_transformed.x();
-    pose_fixed.y = pose_transformed.y();
-    pose_fixed.z = pose_transformed.z();
-    std::cout << "Transformed pose: (" << pose_fixed.x << ", " << pose_fixed.y << ", " << pose_fixed.z << ")"
+    Eigen::Vector3f point_fixed_vec(point_fixed.x, point_fixed.y, point_fixed.z);
+    Eigen::Vector3f point_transformed = R_ba * point_fixed_vec + t_ba;
+    point_fixed.x = point_transformed.x();
+    point_fixed.y = point_transformed.y();
+    point_fixed.z = point_transformed.z();
+    std::cout << "Transformed pose: (" << point_fixed.x << ", " << point_fixed.y << ", " << point_fixed.z << ")"
               << std::endl;
-
+    Eigen::Matrix3f R_pose = (Eigen::AngleAxisf(point_rpy[2], Eigen::Vector3f::UnitZ()) *
+                              Eigen::AngleAxisf(point_rpy[1], Eigen::Vector3f::UnitY()) *
+                              Eigen::AngleAxisf(point_rpy[0], Eigen::Vector3f::UnitX()))
+                                 .toRotationMatrix();
+    Eigen::Vector3f point_rpy_transformed = R_pose * point_rpy;
     YAML::Node entry;
     entry["id"] = p["id"];
     entry["type"] = p["type"];
@@ -95,9 +105,9 @@ YAML::Node transform_route_point(const YAML::Node& p,
     YAML::Node pose_seq(YAML::NodeType::Sequence);
     pose_seq.SetStyle(YAML::EmitterStyle::Flow);
     constexpr int kPoseDecimals = 4;
-    pose_seq.push_back(round_decimal(static_cast<double>(pose_fixed.z), kPoseDecimals));
-    pose_seq.push_back(round_decimal(static_cast<double>(pose_fixed.x), kPoseDecimals));
-    pose_seq.push_back(round_decimal(pose[2], kPoseDecimals)); // yaw 也应变换，此处未做
+    pose_seq.push_back(round_decimal(static_cast<double>(point_fixed.z), kPoseDecimals));
+    pose_seq.push_back(round_decimal(static_cast<double>(point_fixed.x), kPoseDecimals));
+    pose_seq.push_back(round_decimal(point_rpy_transformed[1], kPoseDecimals));  // yaw 也应变换，此处未做
     entry["pose"] = pose_seq;
     entry["zone"] = p["zone"];
     entry["no_rotation"] = p["no_rotation"];
@@ -112,7 +122,8 @@ int merge_routes(const std::string& base_map_name,
                  const std::string& final_map_name) {
     PointCloudPtr aligned_trajectory(new pcl::PointCloud<PointType>);
     loadPCDFile<PointType>(aligned_map_name + "/trajectory.pcd", aligned_trajectory);
-
+    std::map<int, Pose> aligned_poses;
+    loadPosesFromFile(aligned_map_name + "/pose.txt", aligned_poses);
     // T to base from aligned
     auto T_ba = loadTransformFromTxt<float>(final_map_name + "/R_t_final.txt");
     Eigen::Matrix3f R_ba = T_ba.block<3, 3>(0, 0);
@@ -145,7 +156,7 @@ int merge_routes(const std::string& base_map_name,
                 return -1;
             }
             base_routes_points.push_back(
-                transform_route_point(p, aligned_trajectory_kdtree, aligned_trajectory, R_ba, t_ba));
+                transform_route_point(p, aligned_trajectory_kdtree, aligned_trajectory, aligned_poses, R_ba, t_ba));
             base_point_ids.insert(point_id);
         }
         // Edges不涉及具体坐标，直接拷贝到base_routes_edges
@@ -203,10 +214,12 @@ int merge_arm_points(const std::string& base_map_name,
 }
 
 } // namespace
+
 const char* config_file = "align_routes.yaml";
 std::string base_map_name = "Maps/zhenhai-xun-2-3";
 std::string aligned_map_name = "Maps/zhenhai-road-6";
 std::string final_map_name = "Maps/zhenhai-xun-2-road-3";
+
 int main() {
     try {
         YAML::Node cfg = YAML::LoadFile(config_file);
