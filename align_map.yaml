@@ -5,6 +5,8 @@ thre_z_min: -0.2
 thre_z_max: 2.0
 ndt_transformation_epsilon: 0.001
 ndt_maximum_iterations: 100
+# NDT 体素网格边长（米），过大易陷入错误局部最优，过小不稳定；可按场景在 0.5~3 间试
+ndt_resolution: 1.0
 # 坐标系都是ROS坐标系，程序内部会转换为LeGO坐标系
 # 对应关系：ROS (x,y,z) <-> LeGO (y,z,x)
 # zhenhai-road-6在henhai-xun-2-3上的4012号点位开始建图
