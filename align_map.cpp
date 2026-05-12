@@ -232,7 +232,8 @@ int main(int argc, char **argv)
         point.z = pt_transformed.z();
         auto &pose = aligned_poses.at(idx);
         pose.index = idx + base_traj_max_idx + 1;
-        pose.position = align_to_base_R_lego * pose.position + align_to_base_t_lego;
+        const Eigen::Vector3f pose_pos_orig = pose.position;
+        pose.position = R_final * pose_pos_orig + t_final;
         Eigen::Matrix3f R_pose = (Eigen::AngleAxisf(pose.rpy[2], Eigen::Vector3f::UnitZ()) *
                                   Eigen::AngleAxisf(pose.rpy[1], Eigen::Vector3f::UnitY()) *
                                   Eigen::AngleAxisf(pose.rpy[0], Eigen::Vector3f::UnitX()))
