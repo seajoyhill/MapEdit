@@ -1,6 +1,6 @@
-base_map_dir: "Maps/zhenhai-xun-2-3"
-align_map_dir: "Maps/zhenhai-road-6"
-final_map_dir: "Maps/zhenhai-xun-2-road-3"
+base_map_dir: "Maps/zhenhai2xun"
+align_map_dir: "Maps/zhenhai2xun-3xun-road"
+final_map_dir: "Maps/zhenhai2xun-with-road"
 thre_z_min: -0.2
 thre_z_max: 2.0
 ndt_transformation_epsilon: 0.001
@@ -9,9 +9,9 @@ ndt_maximum_iterations: 100
 ndt_resolution: 1.0
 # 坐标系都是ROS坐标系，程序内部会转换为LeGO坐标系
 # 对应关系：ROS (x,y,z) <-> LeGO (y,z,x)
-# zhenhai-road-6在henhai-xun-2-3上的4012号点位开始建图
-align_to_base_t: [-162.6, -299.8, 35.00]
-align_to_base_rpy_deg: [0.0, -10.0, -90.0]
-base_match_roi_enable: true
-base_match_use_ros_coord: true
+# zhenhai2xun-3xun-road在zhenhai2xun上的2167号点位开始建图
+align_to_base_t: [29.54, -21.99, 0.0]
+align_to_base_rpy_deg: [0.0, 0.0, -183.068] # 那边人员操作应该有误，我必须要手动加上一个180度
+base_match_roi_enable: false  # region of interest for base map matching
+base_match_use_ros_coord: true # whether the base match roi is defined in ROS coordinate system (x,y,z) or LeGO coordinate system (y,z,x)
 base_match_roi: [-185.0, -433.0, -0.2, -95.0, -299.0, 80.0]
