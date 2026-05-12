@@ -180,11 +180,14 @@ int main(int argc, char **argv)
     ndt.setInputSource(aligned_map_transformed);
     ndt.setInputTarget(base_map_for_ndt);
     ndt.align(*final_cloud);
-    auto finalTransformation = ndt.getFinalTransformation(); // NOTICE: 这是我们最终需要的变换矩阵
+    auto finalTransformation = ndt.getFinalTransformation(); // 粗对齐之后：source -> target 的 NDT 增量
     std::cout << "==================== " << "NDT alignment result" <<  " ===================="<< std::endl;
     std::cout << "NDT alignment completed in " << ndt.getFinalNumIteration() << " iterations." << std::endl;
+    std::cout << "NDT has converged: " << (ndt.hasConverged() ? "true" : "false") << std::endl;
+    std::cout << "NDT fitness score (MSE-style): " << ndt.getFitnessScore() << std::endl;
     std::cout << "Final transformation epsilon: " << ndt.getTransformationEpsilon() << std::endl;
-    std::cout << "Final finalTransformation matrix:\n" << finalTransformation << std::endl;
+    std::cout << "NDT incremental 4x4 (aligned_map_transformed -> base), NOT the full map merge transform:\n"
+              << finalTransformation << std::endl;
     Eigen::Matrix3f R_ndt = finalTransformation.block<3, 3>(0, 0);
     Eigen::Vector3f t_ndt = finalTransformation.block<3, 1>(0, 3);
     // 将初步对齐的变换和NDT的变换结合，得到最终的变换
@@ -195,6 +198,8 @@ int main(int argc, char **argv)
     Eigen::Matrix4f T_final = Eigen::Matrix4f::Identity();
     T_final.block<3, 3>(0, 0) = R_final;
     T_final.block<3, 1>(0, 3) = t_final;
+    std::cout << "Full 4x4 T_final (original aligned map -> base), LeGO frame; compare manual alignment here:\n"
+              << T_final << std::endl;
     {
         const std::string out_file = final_map_name + "/R_t_final.txt";
         std::ofstream ofs(out_file);
