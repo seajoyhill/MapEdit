@@ -1,3 +1,3 @@
-base_map_dir: "Maps/zhenhai-xun-2-3"
+base_map_dir: "Maps/zhenhai2xun-with-road"
 align_map_dir: "Maps/zhenhai-road-6"
-final_map_dir: "Maps/zhenhai-xun-2-road-3"
+final_map_dir: "Maps/zhenhai2xun-3xun"
