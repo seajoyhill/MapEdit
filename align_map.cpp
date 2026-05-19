@@ -235,7 +235,8 @@ int main(int argc, char **argv)
         point.x = pt_transformed.x();
         point.y = pt_transformed.y();
         point.z = pt_transformed.z();
-        auto &pose = aligned_poses.at(idx);
+        auto &pose = aligned_poses.at(idx); // aligned_trajectory 中某些关键帧可能已经删除，所以根据aligned_trajectory的idx来访问aligned_poses
+        pose.active = true;
         pose.index = idx + base_traj_max_idx + 1;
         const Eigen::Vector3f pose_pos_orig = pose.position;
         pose.position = R_final * pose_pos_orig + t_final;
@@ -252,13 +253,18 @@ int main(int argc, char **argv)
         // std::cout << "Aligned Traj Point " << i << ": " << point.x << " " << point.y << " " << point.z << " " << point.intensity << std::endl;
     }
     std::vector<Pose> final_poses;
+
     for (const auto& kv : base_poses) {
+        final_poses.emplace_back(kv.second);
+    }
+
+    for (auto& kv : aligned_poses) {
         if (kv.second.active) {
             final_poses.emplace_back(kv.second);
+        } else {
+            std::cout << "Pose idx " << kv.first << " in aligned_poses is missing in trajec, skipping." << std::endl;
         }
-    }
-    for (auto& kv : aligned_poses) {
-        final_poses.emplace_back(kv.second);
+
     }
     savePosesToFile(final_map_name + "/pose.txt", final_poses); // 1.保存融合后的pose.txt
 
