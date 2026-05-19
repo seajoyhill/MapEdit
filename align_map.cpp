@@ -235,6 +235,10 @@ int main(int argc, char **argv)
         point.x = pt_transformed.x();
         point.y = pt_transformed.y();
         point.z = pt_transformed.z();
+        if (aligned_poses.find(idx) == aligned_poses.end()) {
+            std::cerr << "Pose idx " << idx << " in aligned_trajectory is missing in aligned_poses, skipping." << std::endl;
+            throw std::out_of_range("Pose idx in aligned_trajectory missing in aligned_poses");
+        }
         auto &pose = aligned_poses.at(idx); // aligned_trajectory 中某些关键帧可能已经删除，所以根据aligned_trajectory的idx来访问aligned_poses
         pose.active = true;
         pose.index = idx + base_traj_max_idx + 1;
@@ -262,7 +266,7 @@ int main(int argc, char **argv)
         if (kv.second.active) {
             final_poses.emplace_back(kv.second);
         } else {
-            std::cout << "Pose idx " << kv.first << " in aligned_poses is missing in trajec, skipping." << std::endl;
+            std::cout << "Pose idx " << kv.first << " in aligned_poses is missing in trajectory.pcd, skipping." << std::endl;
         }
 
     }
