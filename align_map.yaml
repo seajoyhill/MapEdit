@@ -1,6 +1,6 @@
-base_map_dir: "Maps/cuihua1_edited"
-align_map_dir: "Maps/cuihuaxia"
-final_map_dir: "Maps/cuihua13"
+base_map_dir: "Maps/cuihua13"
+align_map_dir: "Maps/cuihuashang_edited"
+final_map_dir: "Maps/cuihua123"
 thre_z_min: -0.2
 thre_z_max: 2.0
 ndt_transformation_epsilon: 0.00001
